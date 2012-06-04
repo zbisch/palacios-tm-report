@@ -94,12 +94,43 @@ implement transactional memory without explicit hardware support.
 In order to implement transactional memory in Palacios, we follow Intel's
 Haswell specifications, providing us with a consistent interface with which
 to use transactions, as well as making future comparisons to direct hardware
-implementations easier. 
+implementations easier.
 
+\section{State Machine}
+In order to keep track of all memory reads and writes during a transaction, 
+and to respond accordingly, we implement a state machine.
+
+- Diagram of the state machine?
+
+- Note what we keep track of
+
+- Undefined exception handler
+
+- Mechanism by which we capture reads and writes
+
+    -General shadow page manipulations
+
+    -Staging page
+
+- Actual trans mem handlers
+
+- Keeping track of other cores
+
+- Various aborts
 
 \section{Design Challenges}
+- Shadow paging subtlties
+
+- Code injection
+
+- Register clobbering
 
 \subsection{Current Assumptions}
+- AMD
+
+- Decoder limitations
+
+- 
 
 \section{Future Work}
 
