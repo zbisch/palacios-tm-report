@@ -42,22 +42,35 @@ emulates the Haswell instructions, successfully performing memory transactions.
 Transactional Memory is pretty cool stuff. We decided to implement it.
 
 \section{Background}
-Transactional memory has long been proposed as a solution to the complexity 
-that arises from attempting to use locks in real world implementations of 
-parallel algorithms. We now discuss the basic model of a transaction.
+Transactional memory has long been proposed as a solution to the programmatic 
+complexity that arises from attempting to use mutual exclusion locks in real world 
+implementations of parallel algorithms. We will now consider a basic overview 
+of the general idea of transactional memory. We will then go on to describe the
+ version that Intel has included in the specifications for the new Haswell 
+processors.
 
 \subsection{Transactions}
-Transactions are a sequence of memory operations that are performed by a 
-process such that the operations appear to happen serially and atomically
-~\cite{Herlihy:1993:TMA:173682.165164}. When a transaction is finished, it 
-either commits its changes to main memory, or it aborts the transaction
-and throws away its changes. In particular, when a transaction begins, it
-keeps track of all memory which is read and written during the transaction.
-If another process reads or writes this memory, the transaction is aborted.
-Upon an abort, a transaction may decide to attempt to run again, or revert
-to traditional locking mechanisms.
+We define a transaction to be a sequence of memory operations that are 
+performed by a processes such that, to all other processes, the operations 
+seem to have been performed atomically. Furthermore, the operations must 
+appear to the process performing the transaction as having happened one after 
+another, with no interference from other processes. When a transaction is finished,
+ it either commits the results of its operations to main memory, or it aborts 
+the transaction and throws away its changes, depending on the results of a
+memory validation.
 
-In addition to memory conflicts, which violate the atomic requirement, 
+In order to protect the appearance that the operations have executed serially
+without interference, the validation must detect if other processes have 
+written to memory that has been used by the transaction. Likewise, in order
+to preserve the atomicity, the transaction must not allow other processes
+to interfere with the commit. Therefore, the validation must detect if 
+other processes have written to memory that is read by the transaction 
+(and thereby interfering with the appearance of serial execution), or other 
+processes read memory written by the transaction (potentially interfering
+with atomicity). Upon an abort, a transaction may decide to attempt to run 
+again, or revert to traditional mutex locking mechanisms.~\cite{Herlihy:1993:TMA:173682.165164}
+
+In addition to memory conflicts with other user processes, 
 transactions may also be aborted in the event of interrupts, context switches,
 or other forced changes in the control flow, as they would violate the
 requirement that the transaction happen entirely serially. 
@@ -67,7 +80,7 @@ concurrency, contrasting with the more pessimistic approach of locks.
 Rather than explicitly preventing other processes from accessing memory, the
 transaction assumes that it will probably be able to complete unencumbered. If
 a conflict does occur, the transaction is able to deal with it accordingly.
-Locks, on the otherhand, assume that conflicts are likely to occur, and 
+Locks, on the other hand, assume that conflicts are likely to occur, and 
 directly block other processes from accessing the relevant portions of memory.
 Transactions therefor stand to offer a performance gain, as forced 
 serialization can be avoided in many cases.
@@ -75,30 +88,69 @@ serialization can be avoided in many cases.
 In addition, transactional memory stands to decrease the complexity of 
 multi-process applications. Programmers would no longer be weighed down by 
 keeping track of which process is holding which locks, and no longer needs
-to worry about deadlocks and other such situations.
+to worry about deadlocks, starvation, and other side effects that can result
+from incorrect use of locks.
 
 \subsection{Intel Implementation}
-The Intel implementation generally follows the design of 
-~\cite{Herlihy:1993:TMA:173682.165164}, which a few exceptions.
-Most notably, each transaction is only attempted a single time: in the event
-of a failure or abort, the code immediatly runs the failsafe. Additionally, 
-the transactions are checked at a granularity of cache lines, rather than
-actual memory address. 
 
-Other changes?
+The starting with the Haswell, Intel has inluded the Intel Transactional
+Synchronization Extension, which is their implementation of transactional
+memory. The extension includes two interfaces: the first is Hardware Lock
+Elision, a system designed to work on legacy processors, and of no further
+interest to us. The second is Restricted Transactional Memory (RTM). This 
+includes instructions for beggining a transactional region (and specifying the
+code to run in the event of a failure), aborting a transaction, and ending a 
+transactional region. (TODO: Cite the intel manual somewhere near)
+
+The Intel implementation generally follows the design of 
+~\cite{Herlihy:1993:TMA:173682.165164}, with a few exceptions.
+Most notably, each transaction is only attempted a single time: in the event
+of a failure or abort, the code immediatly resorts to the failsafe. 
+Additionally, the transactions are checked at a granularity of cache lines, 
+rather than actual memory address. In order to validate each transaction at the
+time of completion, this implementation stores a read set, the locations of
+memory reads from the transaction, and the write set. An abort is triggered
+if another processor reads from an address that appears in the write set or 
+writes to an address in either set.
+
+Since this is a hardware implementation, transactions may also abort if the 
+read and write sets exceed a certain, hardware dependent, capacity. The 
+transaction will also be aborted for any numer of instructions that may 
+interfere with control flow: such as the writing of control registers, any 
+variety of interrupt, processor state changes, TLB control, and so on. The 
+specification also suggests that aborts may occur in the case of self modifying
+code, or other unpredicable scenarios.
+
+The Intel implementation also offers support for nested paging, however we
+save discussion of this topic for later work. (Maybe just don't mention this). 
 
 The Palacios virtual machine manager offers us a unique opportunity to
-implement transactional memory without explicit hardware support.
+implement transactional memory which emulates both the original design of
+transactional memory, as well as a number of the subtleties observed in 
+Intel's implementation.
 
 \section{Palacios Implementation}
-In order to implement transactional memory in Palacios, we follow Intel's
-Haswell specifications, providing us with a consistent interface with which
+In order to implement transactional memory in Palacios, we attempt to follow 
+Intel's Haswell specifications, providing us with a consistent interface with which
 to use transactions, as well as making future comparisons to direct hardware
-implementations easier.
+implementations easier. We will first consider the high level implementation,
+in particular the state machine which governs the functioning of the
+transaction. We will then consider the implementation in palacios, and discuss 
+a number of the difficulties this implementation presented.  
 
-\section{State Machine}
+NOTE: I'm not sure this is the best approach to describing this. Many of the 
+decisions made in the design of the machine exist because of the complexity of
+trying to get back into the VMM from inside the VM, etc. 
+
+\subsection{State Machine}
 In order to keep track of all memory reads and writes during a transaction, 
-and to respond accordingly, we implement a state machine.
+and to respond accordingly, we use the following state machine:
+\begin{enumerate}
+\item Begin Transaction
+\item ifetch
+\item Exec
+\item Abort 
+\end{enumerate}
 
 - Diagram of the state machine?
 
@@ -130,11 +182,27 @@ and to respond accordingly, we implement a state machine.
 
 - Decoder limitations
 
-- 
+- Assume all activity comes from a single core (will be fixed)
+
+- All memory activity from a transaction fits on a page (with no offset collisions)
+
+- All instructions fit on a page, and overwriting the next instruction can be
+done on the same page.
+
+- All interrupts (aside from the obvious ones) are ignorable  
 
 \section{Future Work}
 
+- Fix major assumptions, in particular those related to pages and 
+transaction size limitations.
+
 \section{Conclusions}
+
+- The virtual machine is a viable place to implement paradigms that do not yet
+exist in hardware
+
+- While by no means fast, in our very limited transaction test space, 
+performance was tolerable.
 
 \bibliography{transmem}
 
