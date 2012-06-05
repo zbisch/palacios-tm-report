@@ -142,26 +142,66 @@ Intel's implementation.
 In order to implement transactional memory in Palacios, we attempt to follow 
 Intel's Haswell specifications, providing us with a consistent interface with which
 to use transactions, as well as making future comparisons to direct hardware
-implementations easier. We will first consider the high level implementation,
-in particular the state machine which governs the functioning of the
-transaction. We will then consider the implementation in palacios, and discuss 
-a number of the difficulties this implementation presented.  
-
-NOTE: I'm not sure this is the best approach to describing this. Many of the 
-decisions made in the design of the machine exist because of the complexity of
-trying to get back into the VMM from inside the VM, etc. 
+implementations easier. The implementation relies on storing all information
+that would normally be kept by the processor in the datastructures availible
+to Palacios. As a result, a great deal of the complexity of our implementation
+arises from our need to exit the VM and perform actions in the VMM. We now
+consider the steps in our implementation.
 
 \subsection{State Machine}
-In order to keep track of all memory reads and writes during a transaction, 
-and to respond accordingly, we use the following state machine:
+
+We implement the following states to keep track of a transaction: 
 \begin{enumerate}
-\item Begin Transaction
-\item ifetch
+\item Ifetch
 \item Exec
 \item Abort 
 \end{enumerate}
 
-- Diagram of the state machine?
+In addition, there is a transaction mode, which indicates whether a transaction
+is currently running. When the VM is launched, the mode is set to OFF, and the
+state is ignored.
+
+\subsubsection{Beginning a Transaction}
+
+The transaction begins when the VM enounters an XBEGIN instruction. Since the 
+VM is running on hardware which does not yet support this instruction, this
+causes the VM to exit. On an AMD machine, the SVM handler then indicates that
+the undefined exception was indeed the cuase for the exit. An undefined 
+exception handler is then called, which performs a limited decoding to see
+if the exit was caused by one of the three Haswell transactional memory
+instructions.    
+
+If the instruction is an XBEGIN, the VMM begins the process of launching the
+transaction. First, the argument to XBEGIN is stored, as this indicates the 
+location of the failsafe code. A vmmcall is then registered with the VMM
+(we further describe this later). Next the various read and write set data
+structures are initialised, the transaction state is set to ``IFETCH'', and the
+RIP is advanced to the next instruction.
+
+Next, we invalidate the current shadow page table. This will cause the VM to 
+exit to Palacios in the event of any memory access, allowing us to record it.
+Since we are only eliminating the shadow page table, we are not actually
+tampering with the state of the guest, which allows this manipulation to go
+undetected by the guest.
+
+\subsubsection{Handling an Ifetch}
+
+Since we have eliminated the shadow page tables, as soon as the VM resumes
+executing, a pagefault is caused when attempting to read the instruction.
+Since the transaction mode has been set to ON, we are able to catch this
+pagefault, and in particular know both the faulting address and the associated
+error code. We confirm that this fault is caused by an ifetch through both
+the error code and by explicitly checking that the RIP and faulting address
+match. We advance the transaction state to ``EXEC'', as we are now executing
+a transaction. 
+  
+\begin{figure}[t]
+\centering
+\includegraphics[height=2.0in]{figs/fsm.pdf}
+\caption{The state machine which controls how our implementation records 
+transactions}
+\label{flowchart}
+\end{figure}
 
 - Note what we keep track of
 
