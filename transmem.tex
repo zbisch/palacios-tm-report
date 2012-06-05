@@ -3,7 +3,7 @@
 \usepackage{amssymb}
 \bibliographystyle{plain}
 
-\title{Virtualized Transactional Memory}
+\title{Hardware Transactional Memory without the Hardware}
 \author{Zachary Bischof \\
 	Northwestern University\\
 	Evanston, IL, USA\\
@@ -38,7 +38,7 @@ help improve performance.
 In this paper, we leverage Palacios, a virtual machine monitor, to add
 preliminary support for Intel's publicly available transactional memory
 specification. By switching between direct execution on hardware and simulated
-support of hardware transactional memory, we are able to test the impact of
+support of hardware transactional memory, we are able to move toward testing the impact of
 these instructions on application performance, providing developers with a
 unique chance to estimate how hardware support could affect their application's
 performance. The focus of this work is to explain how we were able to add
@@ -161,6 +161,13 @@ In addition, there is a transaction mode, which indicates whether a transaction
 is currently running. When the VM is launched, the mode is set to OFF, and the
 state is ignored.
 
+\begin{figure}[t]
+\centering
+\includegraphics[height=2.0in]{figs/fsm.pdf}
+\caption{The state machine which controls how our implementation records 
+transactions}
+\label{flowchart}
+\end{figure}
 \subsubsection{Beginning a Transaction}
 
 The transaction begins when the VM enounters an XBEGIN instruction. Since the 
@@ -195,50 +202,163 @@ the error code and by explicitly checking that the RIP and faulting address
 match. We advance the transaction state to ``EXEC'', as we are now executing
 a transaction. 
   
-\begin{figure}[t]
-\centering
-\includegraphics[height=2.0in]{figs/fsm.pdf}
-\caption{The state machine which controls how our implementation records 
-transactions}
-\label{flowchart}
-\end{figure}
+In addition, we decode the current instruction in order to determine the length
+of its operands. We then replace the next $10$ bytes of instructions with
+a VMMCALL. This will allow us to exit back into the VM after the current
+instruction has run and perform any updates are necessary. This is particularly
+important in the event that an instruction has no memory accesses, so that we
+can be sure we are handling each instruction individually. After we do so, 
+we return control to the VM.
 
-- Note what we keep track of
+\subsubsection{Handling a Memory Access}
 
-- Undefined exception handler
+If we observe a page fault caused in user space while our machine is in the
+EXEC state, we know that this is a memory access in our transaction. In the 
+event that the error indicates the fault was caused by a read, we first check
+our write-set, to see if the address has previously been changed by our 
+transaction. If not, we add the page to the read set, then allow the PTE
+handler to create the entry normally. However, prior to returning to the VM,
+we mark the page as read only, so that attempting to write to it will cause
+an additional fault.
 
-- Mechanism by which we capture reads and writes
+If, on the other hand, the address was in our write set, we feed the PTE
+handler a special staging page where we store writes. The read then continues
+on, using and memory updates performed earlier in the transaction.
 
-    -General shadow page manipulations
+If the initial page fault is caused by a write (and in particular, possibly 
+caused by an attempt to write on a page that is marked read only), we 
+add the page to our write set. We then pass a special staging page to the PTE
+handler so that the write is performed on our staging page. This allows the 
+writes to appear serially to the process running the transaction, but be
+invisible to all other processes.
 
-    -Staging page
+Notably, commands which perform a write and a read on the same memory location
+will leave the read undetected, as it will not cause a page fault. However,
+this will not cause any problems, as a write is strictly worse than a read. In
+other words, any situation that would cause an abort with an address in the 
+read set will also cause an abourt for an address in the write set.
 
-- Actual trans mem handlers
+\subsubsection{Finishing an Instruction}
 
-- Keeping track of other cores
+After the memory operations of a given instruction have completed, the 
+processor will encounter the VMMCall injected during the ifetch. This will
+call the registered handler. This handler will first restore the code that
+was overwritten in order to inject the VMMCall. It will then return the state
+of the transaction to ``IFETCH''. Finally, the shadow page table is again 
+invalidated, to guarantee that the next ifetch, and following memory access 
+will cause page faults.  
 
-- Various aborts
+\subsubsection{Committing An Instruction}
+
+If an XEND instruction is enountered, the ifetch step happens exactly as above.
+However, when the VM attempts to execute the instruction, it will exit the VM
+and run the undefined exception handler, as with the XBEGIN above. When an XEND
+is seen, transaction mode is switched to OFF, the memory in the staging page is
+copied to main memory, and control is returned to the VM.
+
+The next instruction will be the injected VMMCall, which will then restore the
+replaced code, unregister the hypercall, and return control to the VM without
+invalidating the page tables.
+
+\subsubsection{Aborting a Transaction}
+
+As in the hardware implementation, there are numerous reasons why a transaction
+may need to be aborted. In addition to the preservation of the serial execution
+and atomic commit properties, anything which causes a context switch or general
+change to control flow should cause an abort. Additionally the transaction may
+abort itself, by calling XABORT. In all of these situations, the state is 
+simply switched to ``ABORT''. When the VMMCall runs, it will see that the 
+transaction is slated for abortion, clean up the code injection from the ifetch,
+and call an abort handler. This handler reasonably disposes of the transaction
+data structures and sets the RIP of the VM to the failsafe code, thereby
+discarding any changes that the transaction made. 
+
+\subsubsection{External Aborts}
+
+TODO: This I guess.
+It is also possible that external processes will trigger an abort by 
+interacting with the read write sets of the transacting process. Therefore, 
+while a transaction is running in one processes, all other cores have their
+transaction mode set to OTHER. While this is on, the reads and writes of 
+these processes are stored using the same techniques as for the transacting
+process, except that all reads and writes are done to main memory instead of a 
+staging page. If an intersection is ever detected between the transactions
+write set and the read and write sets of other cores, or the read set of the
+transaction and others write sets, the transaction is aborted, using the same
+strategy used for other aborts.  
+
+\subsection{Current Assumptions}
+
+The current implementation in palacios is subject to a number of assumptions
+that are currently the result of time limitations, and not intended to be a
+part of the final transaction model.
+
+First, due to simplicity, the undefined exception hander only runs on AMD 
+processors which provide the SVM extension. Additionally, the injected 
+hypercalls are currently using the AMD model. Both of these are likely to be
+trivial to implement via their Intel counterparts.  
+
+In order to perform the hypercall code injection, the decoder is used to 
+determine the length of the current instruction, so that the injected code
+can be placed without damaging neceassary operands. However, the built in
+decoder currently only works with a limited set of instructions, preventing
+arbitrary instructions from being run in a transaction, limiting them to a 
+small set of test instructions. While this issue can likely be solved by 
+switching to the Xen decoder (TODO: CITE), as it can handle a much larger
+instruction set, bugs in Palacios prevented us from doing so at this time.
+
+The current implementation also assumes that the set of instructions in a 
+transaction occur on the same page, and do not run within $10$ bytes of the
+end of the page. While this should be fixable by checking the allignment of
+the instruction address, we have left this assumption in the interest of 
+time. 
+
+The current staging page used to store the writes done by a transaction also
+makes two assumptions. First, we require that all memory written by a 
+transaction fit on a single page. While this is not unreasonable, given that
+transactions are intended, in general, to be smaller, it does create an
+artificial limitation. Second, since the handler which deals with the case
+of a transaction write simply passes the usual PTE handler the same staging
+page no matter what, it assumes that the offset will not conflict with any
+previous or future writes. We see that this could happen if two writes which
+normally happen on seperate pages, but the same offest, are performed in the
+same transaction. Again, while this scenario is unlikely for small transactions
+we are creating a restriction.
+ 
+During testing, we observed that after every reentry to the VM, a number
+of interrupts occur, and control jumps to the kernel. While we have not yet
+determined the cause of these interrupts, we suspect they are the result of 
+a timer, or other piece of hardware. Since these may interfere with our 
+transaction, we should abort when this occurs. However, since our test 
+transactions are simple, we assume that they will not interefere with a 
+transaction and simply ignore the interrupts. In particular, this means that
+we ignore a wave of page faults on kernel address upon each return to the
+VM. Since the error code of the fault indicates the faults were raised by
+the kernel, we can easily filter them out.   
+
+Our current implementation also assumes that it is the only process running,
+and ignores the potential of aborts cause by external processes. While this
+assumption must be removed in order for transactional memory to truly be
+effective, this has allowed us to implement much of the basic tools and
+structure necessary for transactional memory.
+ 
+- Assume all activity comes from a single core (will be fixed)
 
 \section{Design Challenges}
+
+While in the process of desinging and implementing this feature in Palacios, we
+encountered a number of challenges which ultimately shaped how our implementation
+works.
+
+
 - Shadow paging subtlties
 
 - Code injection
 
 - Register clobbering
 
-\subsection{Current Assumptions}
-- AMD
+- Interrupts
 
-- Decoder limitations
-
-- Assume all activity comes from a single core (will be fixed)
-
-- All memory activity from a transaction fits on a page (with no offset collisions)
-
-- All instructions fit on a page, and overwriting the next instruction can be
-done on the same page.
-
-- All interrupts (aside from the obvious ones) are ignorable  
 
 \section{Future Work}
 
