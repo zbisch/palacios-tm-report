@@ -23,19 +23,28 @@
 \begin{document}
 \maketitle
 
-\begin{abstract}
-Transactional memory has long been considered as an alternative to locks for
-implementing parallel algorithms. In particular, it offers an optimistic
-approach to parallelization, and attempts to perform an operation assuming no
-contention will occur.
+\begin{abstract} 
 
-Despite the potential gains of transactional memory, it is only in the 
-not-yet-released Haswell architecture from Intel that it has made an appearance.
-Palacios has presented us with a unique opportunity to emulate this Intel
-implementation in software.
+Transactional memory has long been considered as a useful alternative to locks
+for implementing parallel algorithms, due to its simpler programming interface.
+In particular, it offers an optimistic approach to parallelization, and
+attempts to perform an operation assuming no contention will occur. Despite the
+potential gains of hardware transactional memory, it is not yet widely
+supported in hardware. This will change soon with Intel's upcoming Haswell
+architecture, which provides support for certain transactions. However, there
+is not an easy way to measure how the added support for these instructions will
+help improve performance.
 
-In this paper, we present a basic implementation of transactional memory, which
-emulates the Haswell instructions, successfully performing memory transactions.
+In this paper, we leverage Palacios, a virtual machine monitor, to add
+preliminary support for Intel's publicly available transactional memory
+specification. By switching between direct execution on hardware and simulated
+support of hardware transactional memory, we are able to test the impact of
+these instructions on application performance, providing developers with a
+unique chance to estimate how hardware support could affect their application's
+performance. The focus of this work is to explain how we were able to add
+support to Palacios to test these features.
+
+
 \end{abstract}
 
 \section{Introduction}
