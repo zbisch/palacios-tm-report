@@ -48,7 +48,28 @@ support to Palacios to test these features.
 \end{abstract}
 
 \section{Introduction}
-Transactional Memory is pretty cool stuff. We decided to implement it.
+As the level of hardware parallelism has increased, so has the complexity 
+concurrency control mechanisms to which programmers must be exposed. In order
+to fully utilize the hardware, one must juggle a growing number of locks,
+condition variables, and all the overhead that comes with them.
+
+One proposed solution to this problem has been the concept of transactional
+memory \cite{Herlihy:1993:TMA:173682.165164}, which proproposes a system
+which hides the management of concurrency from programmers and instead
+presents them with an interface which guarantees that either a segment of
+code will be run without interferenc from other processes, or will be
+abandoned and the program allowed to determine its next course of action.
+ 
+We present a preliminary implementation of the transactional memory system 
+described in the intel specification for the Haswell processor (TODO: Cite).
+In order to do so, we make use of the Palacios virtual machine monitor. In
+particular, our system is transparent; from the persepective of the guest
+operating system, it appears that the transaction occured in hardware. 
+
+In addition to providing an example implementation of transactional memory,
+this stands as an indicator of the power and flexibility of virtual machine
+as a platform for implementing hardware design concepts without the complexity
+of actually having the physical hardware.    
 
 \section{Background}
 Transactional memory has long been proposed as a solution to the programmatic 
