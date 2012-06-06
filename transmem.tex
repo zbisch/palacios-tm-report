@@ -138,6 +138,20 @@ implement transactional memory which emulates both the original design of
 transactional memory, as well as a number of the subtleties observed in 
 Intel's implementation.
 
+\section{Related Work}
+
+The idea for transactional as a lock-free programming model first appeared in
+ \cite{Herlihy:1993:TMA:173682.165164}. Since this original proposal, much of
+the discussion surrounding transactional memory has centered around questions 
+of efficiency and design.
+
+In \cite{Shavit:1995:STM:224964.224987} Shavit and Touitou propose a Software
+Transactional Memory, a software method of supporting transactions. Later 
+iterations have sought to increase the capabilities of transactions, 
+eliminating dependencies on certain hardware limitations  
+\cite{Ananian:2006:UTM:1116644.1116670, Hammond:2004:TMC:1028176.1006711,
+Rajwar:2005:VTM:1080695.1070011}. 
+
 \section{Palacios Implementation}
 In order to implement transactional memory in Palacios, we attempt to follow 
 Intel's Haswell specifications, providing us with a consistent interface with which
