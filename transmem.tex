@@ -383,23 +383,82 @@ structure necessary for transactional memory.
 
 While in the process of desinging and implementing this feature in Palacios, we
 encountered a number of challenges which ultimately shaped how our implementation
-works.
+works. The vast majority of the difficulty arrises from the need to return
+control to Palacios everytime a memory operation occurs. Since these normally
+occur extremely often with no interference, there is no existing mechanism to 
+cause such an action. In order to do so, we chose to make use of shadow paging.
+By inducing page faults (namely by blindly invalidating the entire table as
+described above), we are able to return control to Palacios nearly every time
+an operation occurs.
 
+However, additional mechanisms were still necessary: after an instruction has
+completed, we need to again invalidate the shadow tables in order to guarantee 
+the next instruction will cause faults. In order to do this, we make use of a 
+VMMCall, which we insert after every instruction, as described above. In order
+to have the hypercall run the correct handler, the correct code must be moved
+into RAX prior to the execution of the call. This adds the further complication
+that the value of RAX must also be copied into the guest core datastructure,
+and restored after the VMMCall has executed, in order to guarantee that the 
+transaction code executes correctly.  
 
-- Shadow paging subtlties
-
-- Code injection
-
-- Register clobbering
-
+In the majority of our tests, we made use of the addq instruction, as the 
+decoder is able to properly determine its length and it provides us with the
+potential to create a variety of operations. One interesting note, is that when
+adding an immediate to a memory address, no detectible read is performed on
+the destination address: the first page fault seen after the ifetch is a write.
+Therefore, when a transaction is running, and the write is to be done on the
+staging page instead of main memory, the instruction will write an incorrect
+value on the staging page. For example, adding the immediate $1$ to an address
+which contains a $4$ will end up writing $1$ ($0+1$) to a previously blank
+staging page. Therefore, when adding a write to the staging page for the first
+time, the value in main memory must first be copied to the staging page. While
+the solution to this problem was not particularly complex, it stands as an 
+example of the complexity that occurs when trying to capture all memory 
+activity.
+ 
 - Interrupts
-
 
 \section{Future Work}
 
-- Fix major assumptions, in particular those related to pages and 
-transaction size limitations.
+Future directions for this work are clear: extend the current rudimentary 
+implementation until it is fully compatible with the Intel specifications. In
+particular, this means eliminating many of the limiting assumptions that were
+made in the presented design.
 
+First, the limitation that instructions must fit on a page could be solved by
+checking the address of the instruction prior to the code injection. If the 
+instruction is too near the edge of a page, appropriate steps could be taken
+to properly inject and restore the code. While this is again not overly 
+difficult, it does add significant complexity to the instruction injection
+mechanism.
+
+The assumptions related to the staging page (that all writes fit on a page
+and that none of the writes have overlapping offsets), could be eliminated
+by no longer using the staging page as a master copy of memory for a 
+transaction, but instead using it as a place for scratch work. When a 
+write occurs, we pass the PTE handler the staging page, as before, but when we 
+next exit via the hypercall, we copy the result of the write to the write set
+data structure. When performing a read on an address in the write set,
+we first copy the data to the staging page, ensuring that the read sees the
+newest possible version.
+
+There are more complex behaviors described, which are not yet
+implemented, but so not depend on any general structural changes. For example,
+the Intel specification allows for nested transactions in certain situations.
+Implementing this would likely only require minor modifications to the state
+machine. 
+
+Finally, there is the issue of performance. While our implementation is able 
+to campture and record all operations that it needs to track, it does so at the
+cost of up to $4$ exits per instruction, which would result in a tremendous
+slowdown. It is likely that the necessary information could be retrieved at a 
+less granular scale and reduce the number of exits to Palacios.
+
+One proposed solution is to emulate all instructions within a transaction,
+and therefore handling the entire transaction in the host. While this would
+eliminate the number of exits and entries, implementing an emulator and managing
+the transaction are non-trivial endeavors. 
+  
 \section{Conclusions}
 
 - The virtual machine is a viable place to implement paradigms that do not yet
