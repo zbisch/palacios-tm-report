@@ -18,7 +18,8 @@
 	Northwestern University\\
 	Evanston, IL, USA\\
 	maciejswiech2007@u.northwestern.edu
-	}
+    	\titlenote{Authors are listed in alphabetical order.}
+        }
 
 \begin{document}
 \maketitle
@@ -48,7 +49,7 @@ support to Palacios to test these features.
 \end{abstract}
 
 \section{Introduction}
-As the level of hardware parallelism has increased, so has the complexity 
+As the level of hardware parallelism has increased, so has the complexity of
 concurrency control mechanisms to which programmers must be exposed. In order
 to fully utilize the hardware, one must juggle a growing number of locks,
 condition variables, and all the overhead that comes with them.
@@ -61,33 +62,38 @@ code will be run without interferenc from other processes, or will be
 abandoned and the program allowed to determine its next course of action.
  
 We present a preliminary implementation of the transactional memory system 
-described in the intel specification for the Haswell processor (TODO: Cite).
+described in the Intel extension for the upcoming Haswell processor \cite{intelsys}.
 In order to do so, we make use of the Palacios virtual machine monitor. In
 particular, our system is transparent; from the persepective of the guest
-operating system, it appears that the transaction occured in hardware. 
+operating system, it appears that the transaction occured in hardware as if it
+had been run on a processor supporting the extension. 
 
 In addition to providing an example implementation of transactional memory,
-this stands as an indicator of the power and flexibility of virtual machine
-as a platform for implementing hardware design concepts without the complexity
-of actually having the physical hardware.    
+this work stands as an indicator of the power and flexibility of virtual machine 
+monitors as a platform for implementing hardware design concepts without the 
+difficulty of having actual hardware. While the implementation is by no means
+trivial, it's cost is significantly less than that necessary to design and 
+build hardware.  
 
 \section{Background}
 Transactional memory has long been proposed as a solution to the programmatic 
 complexity that arises from attempting to use mutual exclusion locks in real world 
 implementations of parallel algorithms. We will now consider a basic overview 
-of the general idea of transactional memory. We will then go on to describe the
- version that Intel has included in the specifications for the new Haswell 
-processors.
+of the general idea of transactional memory. We then go on to describe the
+ implementation that Intel intends to include in the extrension for the upcoming 
+ Haswell processors.
 
 \subsection{Transactions}
-We define a transaction to be a sequence of memory operations that are 
+We define a \emph{transaction} to be a sequence of memory operations that are 
 performed by a processes such that, to all other processes, the operations 
 seem to have been performed atomically. Furthermore, the operations must 
 appear to the process performing the transaction as having happened one after 
 another, with no interference from other processes. When a transaction is finished,
- it either commits the results of its operations to main memory, or it aborts 
+it either commits the results of its operations to main memory, or it aborts 
 the transaction and throws away its changes, depending on the results of a
-memory validation.
+memory validation. The idea of memory transactions of this form arise from the
+notion of database transactions, except without the requirement that transactions
+are durable to crashes. 
 
 In order to protect the appearance that the operations have executed serially
 without interference, the validation must detect if other processes have 
@@ -121,21 +127,38 @@ keeping track of which process is holding which locks, and no longer needs
 to worry about deadlocks, starvation, and other side effects that can result
 from incorrect use of locks.
 
+\begin{table}
+\begin{center}
+    \begin{tabular}{ l | l | l }
+     & External Read & External Write \\
+    \hline
+    Read & Continue & Abort \\
+    \hline
+    Write & Abort & Abort \\
+    \hline
+    \end{tabular}
+    \caption{The results of a transaction given the combination of a transaction
+            opteration and an extermal operation on the same memory address.}
+\label{results_table}
+\end{center}
+\end{table}
+
+
 \subsection{Intel Implementation}
 
-The starting with the Haswell, Intel has inluded the Intel Transactional
-Synchronization Extension, which is their implementation of transactional
+The starting with the Haswell, Intel has included the Intel Transactional
+Synchronization Extension (TSX), which is their implementation of transactional
 memory. The extension includes two interfaces: the first is Hardware Lock
 Elision, a system designed to work on legacy processors, and of no further
 interest to us. The second is Restricted Transactional Memory (RTM). This 
 includes instructions for beggining a transactional region (and specifying the
 code to run in the event of a failure), aborting a transaction, and ending a 
-transactional region. (TODO: Cite the intel manual somewhere near)
+transactional region. \cite{intelsys, intelblog}
 
 The Intel implementation generally follows the design of 
 ~\cite{Herlihy:1993:TMA:173682.165164}, with a few exceptions.
 Most notably, each transaction is only attempted a single time: in the event
-of a failure or abort, the code immediatly resorts to the failsafe. 
+of a failure or abort, the code immediatly resorts to the abort handler. 
 Additionally, the transactions are checked at a granularity of cache lines, 
 rather than actual memory address. In order to validate each transaction at the
 time of completion, this implementation stores a read set, the locations of
@@ -169,38 +192,63 @@ of efficiency and design.
 In \cite{Shavit:1995:STM:224964.224987} Shavit and Touitou propose a Software
 Transactional Memory, a software method of supporting transactions. Later 
 iterations have sought to increase the capabilities of transactions, 
-eliminating dependencies on certain hardware limitations  
+eliminating dependencies on certain hardware limitations and enabling 
+large and unbounded transactions 
 \cite{Ananian:2006:UTM:1116644.1116670, Hammond:2004:TMC:1028176.1006711,
-Rajwar:2005:VTM:1080695.1070011}. 
+Rajwar:2005:VTM:1080695.1070011}. While there is value in many of these 
+designs, we primarily focus on the original proposal of transactional memory
+and the planned Intel implementation.  
 
 \section{Palacios Implementation}
 In order to implement transactional memory in Palacios, we attempt to follow 
 Intel's Haswell specifications, providing us with a consistent interface with which
 to use transactions, as well as making future comparisons to direct hardware
 implementations easier. The implementation relies on storing all information
-that would normally be kept by the processor in the datastructures availible
+that would normally be kept by the processor in the data structures availible
 to Palacios. As a result, a great deal of the complexity of our implementation
-arises from our need to exit the VM and perform actions in the VMM. We now
-consider the steps in our implementation.
+arises from our need to exit the guest and perform actions in the VMM. We now
+consider the primary components of our implementation.
 
 \subsection{State Machine}
 
-We implement the following states to keep track of a transaction: 
-\begin{enumerate}
-\item Ifetch
-\item Exec
-\item Abort 
-\end{enumerate}
+Our system is controlled by a state machine which is controlled by two
+variables. The first is the transaction mode, which indicates that there is 
+either no transaction running (OFF), a transaction running in the current 
+core (ON), or a transaction running on a different core (OTHER\_CORE). 
+Additionally, there is a state variable, which indicates which handler should
+be executed on the next exit to Palacios. These states are described in 
+Table~\ref{statetable}, and their exact use is described in the following
+sections.
 
-In addition, there is a transaction mode, which indicates whether a transaction
-is currently running. When the VM is launched, the mode is set to OFF, and the
-state is ignored.
+\begin{table*}
+\begin{center}
+    \begin{tabular}{| l | l |}
+    \hline
+    State & Description \\
+    \hline
+    IFETCH & The system is currently expecting a page fault caused by an ifetch
+                of the next instruction. \\
+    \hline
+    EXEC & The system is expecting the next exit to be the result of a page fault for
+                reading or writing data. \\
+    \hline
+    ABORT & The system has encountered an abort condition, and will exit the next time
+                it encounters the exiting hypercall. \\
+    \hline 
+    \end{tabular}
+    \caption{The states used by our implementation to determine how to handle an exit
+             to Palacios.}
+\label{statetable}
+\end{center}
+\end{table*}
+
 
 \begin{figure}[t]
 \centering
-\includegraphics[height=2.0in]{figs/fsm.pdf}
+\includegraphics[height=1.75in]{figs/fsm.png}
 \caption{The state machine which controls how our implementation records 
-transactions}
+transactions. \#PF indicates that a page fault has occured, FA is the faulting
+address, and write indicates the error code.}
 \label{flowchart}
 \end{figure}
 \subsubsection{Beginning a Transaction}
@@ -339,7 +387,7 @@ can be placed without damaging neceassary operands. However, the built in
 decoder currently only works with a limited set of instructions, preventing
 arbitrary instructions from being run in a transaction, limiting them to a 
 small set of test instructions. While this issue can likely be solved by 
-switching to the Xen decoder (TODO: CITE), as it can handle a much larger
+switching to the QUIX86 decoder \cite{quix86site}, as it can handle a much larger
 instruction set, bugs in Palacios prevented us from doing so at this time.
 
 The current implementation also assumes that the set of instructions in a 
@@ -370,6 +418,14 @@ transaction and simply ignore the interrupts. In particular, this means that
 we ignore a wave of page faults on kernel address upon each return to the
 VM. Since the error code of the fault indicates the faults were raised by
 the kernel, we can easily filter them out.   
+
+The transaction mode indicator currently assumes that only a signle 
+transaction can run at a time. This means that if one process is in transaction
+mode, a second core encountering an XBEGIN instruction will cause problems.
+This could be worked around without too much difficulty by seperating the
+indicators, allowing a core to be in both transaction mode (ie performing
+a local transaction), and recording its writes to be validated against
+another transaction.
 
 Our current implementation also assumes that it is the only process running,
 and ignores the potential of aborts cause by external processes. While this
@@ -418,6 +474,57 @@ activity.
  
 - Interrupts
 
+\section{Test Code}
+
+In order to test our implementation, we developed a small set of test code that
+performs a small number of memory operations in a way that we can easily check
+the correctness of the result. The limitations in the decoder described in the
+previous section further restricted us to a particularly small set of 
+instructions. We therefore settled on making use of the addq instruction, as
+offers flexibility in the type of memory operations we test.
+
+In general, our code is of the form:
+\begin{verbatim}
+int main(){
+    long x = 0;
+    long y = 2;
+    printf("%ld\n",x);  
+    asm(...)
+    printf("%ld\n",x);  
+    return 0;
+\end{verbatim} 
+
+Where the ``asm(...)'' includes our transaction, as well as some careful 
+manipulations to avoid using movs during a transaction. The first test simply
+adds an immediate value to a register using the following instructions:
+\begin{verbatim}
+xbeginq 40050e <fail>
+addq   $0x1,(%rdx)
+xend   
+jmp    40050f <success>
+\end{verbatim}
+
+In the execution of the addq instruction, following the ifetch, we expect
+to see a single page fault caused by the attempt to write to the memory address
+in \%RDX (which in this case points to our $x$ variable. Indeed, exactly this 
+happens, and the write is actually performed to the staging page, which then 
+copies the result back to the main memory upon the successful completion of 
+the transaction, causing the final printf to output a $1$.
+
+Next, we test the adding of a memory address to a register:
+\begin{verbatim}
+xbeginq 400518 <fail>
+add    (%rdx),%rax
+xend   
+jmp    400519 <success>
+\end{verbatim}
+
+In this case, we expect to single page fault caused by the read to the address
+in \%RDX register. Again, this happens as expected, and the address is logged
+in the appropriate read set.
+
+
+
 \section{Future Work}
 
 Future directions for this work are clear: extend the current rudimentary 
@@ -461,11 +568,38 @@ the transaction are non-trivial endeavors.
   
 \section{Conclusions}
 
-- The virtual machine is a viable place to implement paradigms that do not yet
-exist in hardware
+We have implemented the preliminary components of support for the Intel model
+of transactional memory in the Palacios virtual machine manager. Despite a 
+number of complex technical challanges, we have been able to create
+transactions which are able to log their memory activity, and either commit
+the data to main memory, or abort it in the case of interference. While the
+current implementation is subject to a number of restrictions, we have 
+completed a number of the core components, which should greatly simplify 
+the remainder of the task.
 
-- While by no means fast, in our very limited transaction test space, 
-performance was tolerable.
+More generally, we have demonstrated that Palacios, and virtual machines in
+general, stand to provide a powerful platform for the design and testing of
+future hardware mechanisms. Using the power and control of Palacios, numerous
+other paradigms could be tested, without waiting for expensive, and possibly
+incomplete, implementations from hardware manufacturers. Furthermore, it could
+greatly simplify simulations for such hardware testing tools. 
+
+\section{Author Bios}
+
+Zachary Bischof is a third-year PhD student working with Prof. Fabián
+Bustamante in the AquaLab research group. His research interests include
+networking and distributed systems, in particular, evaluating their performance
+and impact on the network.
+
+Marcel Flores is a first year PhD student of Prof. Aleksander Kuzmanovic in the
+Networking group. His research interests include studying the preservation of
+user privacy and how to use high level web information to inform network
+systems.
+
+Maciej Swiech is a first year PhD student of Peter Dinda in the Empathic
+Systems Project. His research interests include real-world implementations of
+empathic systems, power optimization in mobile platforms, and low-level systems
+work.
 
 \bibliography{transmem}
 
