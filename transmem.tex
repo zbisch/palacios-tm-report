@@ -474,6 +474,57 @@ activity.
  
 - Interrupts
 
+\section{Test Code}
+
+In order to test our implementation, we developed a small set of test code that
+performs a small number of memory operations in a way that we can easily check
+the correctness of the result. The limitations in the decoder described in the
+previous section further restricted us to a particularly small set of 
+instructions. We therefore settled on making use of the addq instruction, as
+offers flexibility in the type of memory operations we test.
+
+In general, our code is of the form:
+\begin{verbatim}
+int main(){
+    long x = 0;
+    long y = 2;
+    printf("%ld\n",x);  
+    asm(...)
+    printf("%ld\n",x);  
+    return 0;
+\end{verbatim} 
+
+Where the ``asm(...)'' includes our transaction, as well as some careful 
+manipulations to avoid using movs during a transaction. The first test simply
+adds an immediate value to a register using the following instructions:
+\begin{verbatim}
+xbeginq 40050e <fail>
+addq   $0x1,(%rdx)
+xend   
+jmp    40050f <success>
+\end{verbatim}
+
+In the execution of the addq instruction, following the ifetch, we expect
+to see a single page fault caused by the attempt to write to the memory address
+in \%RDX (which in this case points to our $x$ variable. Indeed, exactly this 
+happens, and the write is actually performed to the staging page, which then 
+copies the result back to the main memory upon the successful completion of 
+the transaction, causing the final printf to output a $1$.
+
+Next, we test the adding of a memory address to a register:
+\begin{verbatim}
+xbeginq 400518 <fail>
+add    (%rdx),%rax
+xend   
+jmp    400519 <success>
+\end{verbatim}
+
+In this case, we expect to single page fault caused by the read to the address
+in \%RDX register. Again, this happens as expected, and the address is logged
+in the appropriate read set.
+
+
+
 \section{Future Work}
 
 Future directions for this work are clear: extend the current rudimentary 
@@ -532,6 +583,23 @@ future hardware mechanisms. Using the power and control of Palacios, numerous
 other paradigms could be tested, without waiting for expensive, and possibly
 incomplete, implementations from hardware manufacturers. Furthermore, it could
 greatly simplify simulations for such hardware testing tools. 
+
+\section{Author Bios}
+
+Zachary Bischof is a third-year PhD student working with Prof. Fabián
+Bustamante in the AquaLab research group. His research interests include
+networking and distributed systems, in particular, evaluating their performance
+and impact on the network.
+
+Marcel Flores is a first year PhD student of Prof. Aleksander Kuzmanovic in the
+Networking group. His research interests include studying the preservation of
+user privacy and how to use high level web information to inform network
+systems.
+
+Maciej Swiech is a first year PhD student of Peter Dinda in the Empathic
+Systems Project. His research interests include real-world implementations of
+empathic systems, power optimization in mobile platforms, and low-level systems
+work.
 
 \bibliography{transmem}
 
