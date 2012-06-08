@@ -57,14 +57,14 @@ utilize the hardware, one must juggle a growing number of locks, condition
 variables, and all the overhead that comes with them.
 
 One proposed solution to this problem has been the concept of transactional
-memory~\cite{Herlihy:1993:TMA:173682.165164}, which proposes a system which
+memory~\cite{Herlihy:1993:TMA:173682.165164}, which proposes a system that
 hides the management of concurrency from programmers and instead presents them
 with an interface which guarantees that either a segment of code will be run
 without interference from other threads of execution, or will be abandoned and
 the program allowed to determine its next course of action.
 
 Despite the potential convenience provided by transactional memory and the fact
-that hardware support was first proposed almost 20 years ago~\cite{Herlihy},
+that hardware support was first proposed almost 20 years ago~\cite{Herlihy:1993:TMA:173682.165164},
 transactional memory support is still limited to software support. However,
 Intel recently announced their plans to add support into future
 processors~\cite{intelsys}.
@@ -97,10 +97,10 @@ upcoming Haswell processors.
 \subsection{Transactions} 
 
 We define a \emph{transaction} to be a sequence of memory operations that are
-performed by a processor such that, to all other processors, the operations
+performed by a core such that, to all other cores, the operations
 seem to have been performed atomically. Furthermore, the operations must appear
-to other processors  performing the transaction as having happened one after
-another, with no interference from other processes.  When a transaction is
+to the core  performing the transaction as having happened one after
+another, with no interference from other cores or processes.  When a transaction is
 finished, it either commits the results of its operations to main memory or it
 aborts the transaction and throws away its changes, depending on the results of
 a memory validation. The idea of memory transactions of this form arise from
@@ -158,7 +158,7 @@ incorrect use of locks.
 
 \subsection{Intel Implementation}
 
-The starting with the Haswell, Intel has included the Intel Transactional
+Beginning with the upcoming Haswell processors, Intel has included the Intel Transactional
 Synchronization Extension (TSX), which is their implementation of transactional
 memory. The extension includes two interfaces: the first is Hardware Lock
 Elision, a system designed to work on legacy processors, and of no further
@@ -168,9 +168,12 @@ code to run in the event of a failure), aborting a transaction, and ending a
 transactional region. \cite{intelsys, intelblog}
 
 The Intel implementation generally follows the design of 
-~\cite{Herlihy:1993:TMA:173682.165164}, with a few exceptions.
-Most notably, each transaction is only attempted a single time: in the event
-of a failure or abort, the code immediately resorts to the abort handler. 
+~\cite{Herlihy:1993:TMA:173682.165164}, with a few adjustments.
+Most notably, the abort hander must guarantee forward progress in 
+execution. Since a transaction explicitly does not promise that it will 
+ever successfully commit, this abort handler need either engage in some
+logic to prevent infinite retries of a transaction, or immediately revert to more
+traditional concurrency control mechanisms. 
 Additionally, the transactions are checked at a granularity of cache lines, 
 rather than actual memory address. In order to validate each transaction at the
 time of completion, this implementation stores a read set, the locations of
@@ -186,8 +189,29 @@ variety of interrupt, processor state changes, TLB control, and so on. The
 specification also suggests that aborts may occur in the case of self modifying
 code, or other unpredictable scenarios.
 
-The Intel implementation also offers support for nested paging, however we
-save discussion of this topic for later work. (Maybe just don't mention this). 
+The Intel implementation also offers support for nested transactions. 
+This is done via a simple counter: every time the instruction to begin a
+transaction is encountered, the counter is incremented. Every time a 
+transaction is able to commit, the counter is decremented, not unlike a
+counting semaphore. However, the processor itself doesn't differentiate 
+between the transactions themselves and therefore encountering an abort
+condition will cause all the nested transactions to abort and the
+outermost abort handler to be run. We note that while this means that
+while one would not have perfect granularity when dealing with nested 
+transactions, this makes functions which makes use of transactions
+transaction-safe. In other words, a programmer need not worry about using 
+a function that calls a transaction within a transaction, as they will
+combine in a very natural way.
+
+The planned implementation is done through the addition of three instructions:
+xbegin, xabort, and xend. The xbegin instruction indicates the beginning of
+a transactional region. It takes a single  relative address as an operand. This
+address indicates the location of the abort handler to be run in the case of
+a failure. The xabort instruction indicates a manual abort of the transaction.
+It also has a single operand, which is an imm8, used to indicate to the abort
+handler the reason for the abort. Finally, the xend instruction indicates that
+the transaction has completed, and if no abort scenario was encountered,
+the changes should be committed.
 
 The Palacios virtual machine manager offers us a unique opportunity to
 implement transactional memory which emulates both the original design of
