@@ -89,7 +89,8 @@ that necessary to design and build hardware.
 
 Transactional memory has long been proposed as a solution to the programmatic
 complexity that arises from attempting to use mutual exclusion locks in real
-world implementations of parallel algorithms. We will now consider a basic
+world implementations of parallel algorithms, as well as low-level software such
+as operating systems. We will now consider a basic
 overview of the general idea of transactional memory. We then go on to describe
 the implementation that Intel intends to include in the extension for the
 upcoming Haswell processors.
@@ -115,6 +116,8 @@ interfere with the commit. Therefore, the validation must detect if other
 processes have written to memory that is read by the transaction (and thereby
 interfering with the appearance of serial execution), or other processes read
 memory written by the transaction (potentially interfering with atomicity).
+Additionally, no external interactions, such as interrupts, must be allowed to
+interfere with the process of committing a transaction.
 Upon an abort, a transaction may decide to attempt to run again, or revert to
 traditional mutex locking mechanisms.~\cite{Herlihy:1993:TMA:173682.165164}
 
@@ -393,7 +396,8 @@ will cause page faults.
 If an \texttt{xend} instruction is encountered, the ifetch step happens exactly as above.
 However, when the VM attempts to execute the instruction, it will exit the VM
 and run the undefined exception handler, as with the \texttt{xbegin} above. When an \texttt{xend}
-is seen, transaction mode is switched to OFF, the memory in the staging page is
+is seen, transaction mode is switched to OFF, the memory in the staging page
+indicated by the write list of the transaction block is
 copied to main memory, and control is returned to the VM.
 
 The next instruction will be the injected hypercall, which will then restore the
