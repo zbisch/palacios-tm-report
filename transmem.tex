@@ -524,12 +524,29 @@ xend
 jmp    40051f <success>
 \end{verbatim}
 
-As with the first example, this first adds one to $x$ (in memory). Next it reads
-the value from memory, and adds it to \%RBX. Here, \%RBX contains the value of $y$.
-Upon successful completion of the program it prints $4$ ({1 + 1 + 2}).
+As with the first example, this first adds one to $x$ (in memory). Next it
+reads the value from memory, and adds it to \%RBX. Here, \%RBX contains the
+value of $y$.  Upon successful completion of the program it prints $4$ ({1 + 1
++ 2}).
 
 
-%% TODO: Abort example
+Our last test program directly tests our ability to rollback a commit when we
+reach an xabort.
+
+\begin{verbatim}
+xbeginq 40051e <fail>
+addq   $0x1,(%rdx)
+xabort $5
+\end{verbatim}
+
+Here, we once again modify the value stored in $x$. However, this time, we hit
+an xabort before reaching an xend statement.  As soon as we hit the invalid
+instruction for the xabort, we call our abort handler to free our data
+structures and roll back our changes. As a result, the change to $x$ appears as
+though it never occurred. We then modify \%RIP according to the argument to the
+xbegin statement. Although we only tested the aborts directly with xabort, the
+same abort handler could be called from whenever an event occurs that
+invalidates the transaction, such as a conflicting write from another core.
 
 \subsection{Current Assumptions}
 
