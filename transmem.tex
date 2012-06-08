@@ -7,7 +7,7 @@
 \author{Zachary Bischof \\
 	Northwestern University\\
 	Evanston, IL, USA\\
-	zbischof@u.northwestern.edu
+	zbischof@eecs.northwestern.edu
 	\and 
 	Marcel Flores \\
 	Northwestern University\\
@@ -24,6 +24,7 @@
 \begin{document}
 \maketitle
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{abstract} 
 
 Transactional memory has long been considered as a useful alternative to locks
@@ -39,49 +40,59 @@ help improve performance.
 In this paper, we leverage Palacios, a virtual machine monitor, to add
 preliminary support for Intel's publicly available transactional memory
 specification. By switching between direct execution on hardware and simulated
-support of hardware transactional memory, we are able to move toward testing the impact of
-these instructions on application performance, providing developers with a
-unique chance to estimate how hardware support could affect their application's
-performance. The focus of this work is to explain how we were able to add
-support to Palacios to test these features.
-
+support of hardware transactional memory, we are able to move toward testing
+the impact of these instructions on application performance, providing
+developers with a unique chance to estimate how hardware support could affect
+their application's performance. The focus of this work is to explain how we
+were able to add support to Palacios to test these features.  
 
 \end{abstract}
 
-\section{Introduction}
-As the level of hardware parallelism has increased, so has the complexity of
-concurrency control mechanisms to which programmers must be exposed. In order
-to fully utilize the hardware, one must juggle a growing number of locks,
-condition variables, and all the overhead that comes with them.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Introduction} 
+
+As the importance of hardware parallelism has increased, so has the complexity
+of concurrency control mechanisms that programmers must use. In order to fully
+utilize the hardware, one must juggle a growing number of locks, condition
+variables, and all the overhead that comes with them.
 
 One proposed solution to this problem has been the concept of transactional
-memory \cite{Herlihy:1993:TMA:173682.165164}, which proproposes a system
+memory~\cite{Herlihy:1993:TMA:173682.165164}, which proposes a system
 which hides the management of concurrency from programmers and instead
 presents them with an interface which guarantees that either a segment of
-code will be run without interferenc from other processes, or will be
+code will be run without interference from other processes, or will be
 abandoned and the program allowed to determine its next course of action.
- 
-We present a preliminary implementation of the transactional memory system 
-described in the Intel extension for the upcoming Haswell processor \cite{intelsys}.
-In order to do so, we make use of the Palacios virtual machine monitor. In
-particular, our system is transparent; from the persepective of the guest
-operating system, it appears that the transaction occured in hardware as if it
-had been run on a processor supporting the extension. 
+
+Despite the potential convenience provided by transactional memory and the fact
+that hardware support was first proposed almost 20 years ago~\cite{Herlihy},
+transactional memory support is still limited to software support. However,
+Intel recently announced their plans to add support into upcoming
+processors~\cite{intelsys}.
+
+We present a preliminary implementation of the transactional memory system
+described in the Intel extension for the upcoming Haswell
+processor~\cite{intelsys}.  In order to do so, we make use of the Palacios
+virtual machine monitor. In particular, our system is transparent; from the
+perspective of the guest operating system, it appears that the transaction
+occurred in hardware as if it had been run on a processor supporting the
+extension. 
 
 In addition to providing an example implementation of transactional memory,
-this work stands as an indicator of the power and flexibility of virtual machine 
-monitors as a platform for implementing hardware design concepts without the 
-difficulty of having actual hardware. While the implementation is by no means
-trivial, it's cost is significantly less than that necessary to design and 
-build hardware.  
+this work stands as an indicator of the power and flexibility of virtual
+machine monitors as a platform for implementing and testing hardware design
+concepts without the difficulty of having actual hardware. While the
+implementation is by no means trivial, it's cost is significantly less than
+that necessary to design and build hardware.  
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Background}
-Transactional memory has long been proposed as a solution to the programmatic 
-complexity that arises from attempting to use mutual exclusion locks in real world 
-implementations of parallel algorithms. We will now consider a basic overview 
-of the general idea of transactional memory. We then go on to describe the
- implementation that Intel intends to include in the extrension for the upcoming 
- Haswell processors.
+
+Transactional memory has long been proposed as a solution to the programmatic
+complexity that arises from attempting to use mutual exclusion locks in real
+world implementations of parallel algorithms. We will now consider a basic
+overview of the general idea of transactional memory. We then go on to describe
+the implementation that Intel intends to include in the extension for the
+upcoming Haswell processors.
 
 \subsection{Transactions}
 We define a \emph{transaction} to be a sequence of memory operations that are 
@@ -89,22 +100,22 @@ performed by a processes such that, to all other processes, the operations
 seem to have been performed atomically. Furthermore, the operations must 
 appear to the process performing the transaction as having happened one after 
 another, with no interference from other processes. When a transaction is finished,
-it either commits the results of its operations to main memory, or it aborts 
+it either commits the results of its operations to main memory or it aborts 
 the transaction and throws away its changes, depending on the results of a
 memory validation. The idea of memory transactions of this form arise from the
 notion of database transactions, except without the requirement that transactions
 are durable to crashes. 
 
 In order to protect the appearance that the operations have executed serially
-without interference, the validation must detect if other processes have 
-written to memory that has been used by the transaction. Likewise, in order
-to preserve the atomicity, the transaction must not allow other processes
-to interfere with the commit. Therefore, the validation must detect if 
-other processes have written to memory that is read by the transaction 
-(and thereby interfering with the appearance of serial execution), or other 
-processes read memory written by the transaction (potentially interfering
-with atomicity). Upon an abort, a transaction may decide to attempt to run 
-again, or revert to traditional mutex locking mechanisms.~\cite{Herlihy:1993:TMA:173682.165164}
+without interference, the validation must detect if other processes have
+written to memory that has been used by the transaction. Likewise, in order to
+preserve the atomicity, the transaction must not allow other processes to
+interfere with the commit. Therefore, the validation must detect if other
+processes have written to memory that is read by the transaction (and thereby
+interfering with the appearance of serial execution), or other processes read
+memory written by the transaction (potentially interfering with atomicity).
+Upon an abort, a transaction may decide to attempt to run again, or revert to
+traditional mutex locking mechanisms.~\cite{Herlihy:1993:TMA:173682.165164}
 
 In addition to memory conflicts with other user processes, 
 transactions may also be aborted in the event of interrupts, context switches,
@@ -370,70 +381,6 @@ write set and the read and write sets of other cores, or the read set of the
 transaction and others write sets, the transaction is aborted, using the same
 strategy used for other aborts.  
 
-\subsection{Current Assumptions}
-
-The current implementation in palacios is subject to a number of assumptions
-that are currently the result of time limitations, and not intended to be a
-part of the final transaction model.
-
-First, due to simplicity, the undefined exception hander only runs on AMD 
-processors which provide the SVM extension. Additionally, the injected 
-hypercalls are currently using the AMD model. Both of these are likely to be
-trivial to implement via their Intel counterparts.  
-
-In order to perform the hypercall code injection, the decoder is used to 
-determine the length of the current instruction, so that the injected code
-can be placed without damaging neceassary operands. However, the built in
-decoder currently only works with a limited set of instructions, preventing
-arbitrary instructions from being run in a transaction, limiting them to a 
-small set of test instructions. While this issue can likely be solved by 
-switching to the QUIX86 decoder \cite{quix86site}, as it can handle a much larger
-instruction set, bugs in Palacios prevented us from doing so at this time.
-
-The current implementation also assumes that the set of instructions in a 
-transaction occur on the same page, and do not run within $10$ bytes of the
-end of the page. While this should be fixable by checking the allignment of
-the instruction address, we have left this assumption in the interest of 
-time. 
-
-The current staging page used to store the writes done by a transaction also
-makes two assumptions. First, we require that all memory written by a 
-transaction fit on a single page. While this is not unreasonable, given that
-transactions are intended, in general, to be smaller, it does create an
-artificial limitation. Second, since the handler which deals with the case
-of a transaction write simply passes the usual PTE handler the same staging
-page no matter what, it assumes that the offset will not conflict with any
-previous or future writes. We see that this could happen if two writes which
-normally happen on seperate pages, but the same offest, are performed in the
-same transaction. Again, while this scenario is unlikely for small transactions
-we are creating a restriction.
- 
-During testing, we observed that after every reentry to the VM, a number
-of interrupts occur, and control jumps to the kernel. While we have not yet
-determined the cause of these interrupts, we suspect they are the result of 
-a timer, or other piece of hardware. Since these may interfere with our 
-transaction, we should abort when this occurs. However, since our test 
-transactions are simple, we assume that they will not interefere with a 
-transaction and simply ignore the interrupts. In particular, this means that
-we ignore a wave of page faults on kernel address upon each return to the
-VM. Since the error code of the fault indicates the faults were raised by
-the kernel, we can easily filter them out.   
-
-The transaction mode indicator currently assumes that only a signle 
-transaction can run at a time. This means that if one process is in transaction
-mode, a second core encountering an XBEGIN instruction will cause problems.
-This could be worked around without too much difficulty by seperating the
-indicators, allowing a core to be in both transaction mode (ie performing
-a local transaction), and recording its writes to be validated against
-another transaction.
-
-Our current implementation also assumes that it is the only process running,
-and ignores the potential of aborts cause by external processes. While this
-assumption must be removed in order for transactional memory to truly be
-effective, this has allowed us to implement much of the basic tools and
-structure necessary for transactional memory.
- 
-- Assume all activity comes from a single core (will be fixed)
 
 \section{Design Challenges}
 
@@ -492,6 +439,7 @@ int main(){
     asm(...)
     printf("%ld\n",x);  
     return 0;
+}
 \end{verbatim} 
 
 Where the ``asm(...)'' includes our transaction, as well as some careful 
@@ -523,6 +471,79 @@ In this case, we expect to single page fault caused by the read to the address
 in \%RDX register. Again, this happens as expected, and the address is logged
 in the appropriate read set.
 
+\begin{verbatim}
+xbeginq 40051e <fail>
+addq   $0x1,(%rdx)
+add    (%rdx),%rbx
+xend   
+jmp    40051f <success>
+\end{verbatim}
+
+
+\subsection{Current Assumptions}
+
+The current implementation in palacios is subject to a number of assumptions
+that are currently the result of time limitations, and not intended to be a
+part of the final transaction model.
+
+First, due to simplicity, the undefined exception hander only runs on AMD 
+processors which provide the SVM extension. Additionally, the injected 
+hypercalls are currently using the AMD model. Both of these are likely to be
+trivial to implement via their Intel counterparts.  
+
+In order to perform the hypercall code injection, the decoder is used to 
+determine the length of the current instruction, so that the injected code
+can be placed without damaging neceassary operands. However, the built in
+decoder currently only works with a limited set of instructions, preventing
+arbitrary instructions from being run in a transaction, limiting them to a 
+small set of test instructions. While this issue can likely be solved by 
+switching to the QUIX86 decoder \cite{quix86site}, as it can handle a much larger
+instruction set, bugs in Palacios prevented us from doing so at this time.
+
+The current implementation also assumes that the set of instructions in a 
+transaction occur on the same page, and do not run within $10$ bytes of the
+end of the page. While this should be fixable by checking the allignment of
+the instruction address, we have left this assumption in the interest of 
+time. 
+
+The current staging page used to store the writes done by a transaction also
+makes two assumptions. First, we require that all memory written by a 
+transaction fit on a single page. While this is not unreasonable, given that
+transactions are intended, in general, to be smaller, it does create an
+artificial limitation. Second, since the handler which deals with the case
+of a transaction write simply passes the usual PTE handler the same staging
+page no matter what, it assumes that the offset will not conflict with any
+previous or future writes. We see that this could happen if two writes which
+normally happen on seperate pages, but the same offest, are performed in the
+same transaction. Again, while this scenario is unlikely for small transactions
+we are creating a restriction.
+ 
+During testing, we observed that after every reentry to the VM, a number
+of interrupts occur, and control jumps to the kernel. While we have not yet
+determined the cause of these interrupts, we suspect they are the result of 
+a timer, or other piece of hardware. Since these may interfere with our 
+transaction, we should abort when this occurs. However, since our test 
+transactions are simple, we assume that they will not interefere with a 
+transaction and simply ignore the interrupts. In particular, this means that
+we ignore a wave of page faults on kernel address upon each return to the
+VM. Since the error code of the fault indicates the faults were raised by
+the kernel, we can easily filter them out.   
+
+The transaction mode indicator currently assumes that only a signle 
+transaction can run at a time. This means that if one process is in transaction
+mode, a second core encountering an XBEGIN instruction will cause problems.
+This could be worked around without too much difficulty by seperating the
+indicators, allowing a core to be in both transaction mode (ie performing
+a local transaction), and recording its writes to be validated against
+another transaction.
+
+Our current implementation also assumes that it is the only core running,
+and ignores the potential of aborts cause by external cores. While this
+assumption must be removed in order for transactional memory to truly be
+effective, this has allowed us to implement much of the basic tools and
+structure necessary for transactional memory.
+ 
+- Assume all activity comes from a single core (will be fixed)
 
 
 \section{Future Work}
