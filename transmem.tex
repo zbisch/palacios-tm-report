@@ -201,15 +201,36 @@ while one would not have perfect granularity when dealing with nested
 transactions, this makes functions which makes use of transactions
 transaction-safe. In other words, a programmer need not worry about using 
 a function that calls a transaction within a transaction, as they will
-combine in a very natural way.
+combine in a very natural way. The limit for the number of nested 
+is defined in hardware. Encountering it will simply cause the transaction
+to abort.
+
+\begin{table}
+\begin{center}
+    \begin{tabular}{| l | l |}
+    \hline
+    Instruction & Use \\
+    \hline
+    \texttt{xbegin} & Indicate the start of a transaction \\
+    \hline
+    \texttt{xabort} & Manually abort the current transaction. \\
+    \hline
+    \texttt{xend} & Commit and end the current transaction \\
+    \hline 
+    \end{tabular}
+    \caption{The intel TSX instructions}
+\label{insttable}
+\end{center}
+\end{table}
+
 
 The planned implementation is done through the addition of three instructions:
-xbegin, xabort, and xend. The xbegin instruction indicates the beginning of
+\texttt{xbegin}, \texttt{xabort}, and \texttt{xend}. The \texttt{xbegin} instruction indicates the beginning of
 a transactional region. It takes a single  relative address as an operand. This
 address indicates the location of the abort handler to be run in the case of
-a failure. The xabort instruction indicates a manual abort of the transaction.
+a failure. The \texttt{xabort} instruction indicates a manual abort of the transaction.
 It also has a single operand, which is an imm8, used to indicate to the abort
-handler the reason for the abort. Finally, the xend instruction indicates that
+handler the reason for the abort. Finally, the \texttt{xend} instruction indicates that
 the transaction has completed, and if no abort scenario was encountered,
 the changes should be committed.
 
@@ -289,7 +310,7 @@ address, and write indicates the error code.}
 \end{figure}
 \subsubsection{Beginning a Transaction}
 
-The transaction begins when the VM enounters an XBEGIN instruction. Since the 
+The transaction begins when the VM enounters an \texttt{xbegin} instruction. Since the 
 VM is running on hardware which does not yet support this instruction, this
 causes the VM to exit. On an AMD machine, the SVM handler then indicates that
 the undefined exception was indeed the cause for the exit. An undefined 
@@ -297,11 +318,11 @@ exception handler is then called, which performs a limited decoding to see
 if the exit was caused by one of the three Haswell transactional memory
 instructions.    
 
-If the instruction is an XBEGIN, the VMM begins the process of launching the
-transaction. First, the argument to XBEGIN is stored, as this indicates the 
-location of the failsafe code. A vmmcall is then registered with the VMM
+If the instruction is an \texttt{xbegin}, the VMM begins the process of launching the
+transaction. First, the argument to \texttt{xbegin} is stored, as this indicates the 
+location of the failsafe code. A hypercall is then registered with the VMM
 (we further describe this later). Next the various read and write set data
-structures are initialised, the transaction state is set to ``IFETCH'', and the
+structures are initialized, the transaction state is set to IFETCH, and the
 RIP is advanced to the next instruction.
 
 Next, we invalidate the current shadow page table. This will cause the VM to 
@@ -313,17 +334,17 @@ undetected by the guest.
 \subsubsection{Handling an Ifetch}
 
 Since we have eliminated the shadow page tables, as soon as the VM resumes
-executing, a pagefault is caused when attempting to read the instruction.
+executing, a page fault is caused when attempting to read the instruction.
 Since the transaction mode has been set to ON, we are able to catch this
-pagefault, and in particular know both the faulting address and the associated
+page fault, and in particular know both the faulting address and the associated
 error code. We confirm that this fault is caused by an ifetch through both
 the error code and by explicitly checking that the RIP and faulting address
-match. We advance the transaction state to ``EXEC'', as we are now executing
+match. We advance the transaction state to EXEC, as we are now executing
 a transaction. 
   
 In addition, we decode the current instruction in order to determine the length
 of its operands. We then replace the next $10$ bytes of instructions with
-a VMMCALL. This will allow us to exit back into the VM after the current
+a hypercall. This will allow us to exit back into the VM after the current
 instruction has run and perform any updates are necessary. This is particularly
 important in the event that an instruction has no memory accesses, so that we
 can be sure we are handling each instruction individually. After we do so, 
@@ -360,22 +381,22 @@ read set will also cause an abort for an address in the write set.
 \subsubsection{Finishing an Instruction}
 
 After the memory operations of a given instruction have completed, the 
-processor will encounter the VMMCall injected during the ifetch. This will
+processor will encounter the hypercall injected during the ifetch. This will
 call the registered handler. This handler will first restore the code that
-was overwritten in order to inject the VMMCall. It will then return the state
-of the transaction to ``IFETCH''. Finally, the shadow page table is again 
+was overwritten in order to inject the hypercall. It will then return the state
+of the transaction to IFETCH. Finally, the shadow page table is again 
 invalidated, to guarantee that the next ifetch, and following memory access 
 will cause page faults.  
 
 \subsubsection{Committing An Instruction}
 
-If an XEND instruction is enountered, the ifetch step happens exactly as above.
+If an \texttt{xend} instruction is encountered, the ifetch step happens exactly as above.
 However, when the VM attempts to execute the instruction, it will exit the VM
-and run the undefined exception handler, as with the XBEGIN above. When an XEND
+and run the undefined exception handler, as with the \texttt{xbegin} above. When an \texttt{xend}
 is seen, transaction mode is switched to OFF, the memory in the staging page is
 copied to main memory, and control is returned to the VM.
 
-The next instruction will be the injected VMMCall, which will then restore the
+The next instruction will be the injected hypercall, which will then restore the
 replaced code, unregister the hypercall, and return control to the VM without
 invalidating the page tables.
 
@@ -385,8 +406,8 @@ As in the hardware implementation, there are numerous reasons why a transaction
 may need to be aborted. In addition to the preservation of the serial execution
 and atomic commit properties, anything which causes a context switch or general
 change to control flow should cause an abort. Additionally the transaction may
-abort itself, by calling XABORT. In all of these situations, the state is 
-simply switched to ``ABORT''. When the VMMCall runs, it will see that the 
+abort itself, by calling \texttt{xabort}. In all of these situations, the state is 
+simply switched to ABORT. When the hypercall runs, it will see that the 
 transaction is slated for abortion, clean up the code injection from the ifetch,
 and call an abort handler. This handler reasonably disposes of the transaction
 data structures and sets the RIP of the VM to the failsafe code, thereby
@@ -394,19 +415,16 @@ discarding any changes that the transaction made.
 
 \subsubsection{External Aborts}
 
-TODO: This I guess.
-
 It is also possible that other threads of execution will trigger an abort by
 interacting with the read write sets of the transacting processor. Therefore,
 while a transaction is running in one processor, all other cores have their
-transaction mode set to OTHER. While this is on, the reads and writes of these
+transaction mode set to OTHER\_CORE. While this is on, the reads and writes of these
 processors are stored using the same techniques as for the transacting
 processor, except that all reads and writes are done to main memory instead of
 a staging page. If an intersection is ever detected between the transactions
 write set and the read and write sets of other cores, or the read set of the
 transaction and others write sets, the transaction is aborted, using the same
 strategy used for other aborts.  
-
 
 \section{Design Challenges}
 
@@ -423,14 +441,14 @@ an operation occurs.
 However, additional mechanisms were still necessary: after an instruction has
 completed, we need to again invalidate the shadow tables in order to guarantee 
 the next instruction will cause faults. In order to do this, we make use of a 
-VMMCall, which we insert after every instruction, as described above. In order
+hypercall, which we insert after every instruction, as described above. In order
 to have the hypercall run the correct handler, the correct code must be moved
 into RAX prior to the execution of the call. This adds the further complication
 that the value of RAX must also be copied into the guest core data structure,
-and restored after the VMMCall has executed, in order to guarantee that the 
+and restored after the hypercall has executed, in order to guarantee that the 
 transaction code executes correctly.  
 
-In the majority of our tests, we made use of the addq instruction, as the 
+In the majority of our tests, we made use of the \texttt{addq} instruction, as the 
 decoder is able to properly determine its length and it provides us with the
 potential to create a variety of operations. One interesting note, is that when
 adding an immediate to a memory address, no detectable read is performed on
@@ -445,14 +463,12 @@ the solution to this problem was not particularly complex, it stands as an
 example of the complexity that occurs when trying to capture all memory 
 activity.
  
-- Interrupts
-
 \section{Test Code}
 
 In order to test our implementation, we developed a small set of test code that
 performs a small number of memory operations in a way that we can easily check
 the correctness of the result when commit or aborting transactions. 
-In the simple examples that follow, we use the addq instruction, as it
+In the simple examples that follow, we use the \texttt{addq} instruction, as it
 offers flexibility in the type of operations involving memory we must test.
 
 In general, our code is of the form:
@@ -483,16 +499,16 @@ xend
 jmp    40050f <success>
 \end{verbatim}
 
-In this example, we originally expected the addq instruction to see a page
+In this example, we originally expected the \texttt{addq} instruction to see a page
 fault caused by an attempt to read the memory address in \%RDX, however, for
 this instruction, the page fault was caused by an attempt to write to the
 memory address in \%RDX (which points to our $x$ variable). Originally, when we
 mapped this memory address to our staging page, it would perform the read from
-the address in the staging page.  In other words, the read and write occurred
-simultaneously.  In order to address this issue, even when we page fault due to
-a write, we first read the current contents of memory and save it to our
-staging page. Then the write is actually performed to the staging page, using
-the initial value we copied.  After reaching the xend instruction,  Then it
+the address in the staging page.  This is precisely an example of the situation 
+described in the previous section in which we must first copy the original value
+to our staging page, before handing the PTE handler the page and allowing the
+operation to be done.
+After reaching the \texttt{xend} instruction,  Then it
 copies the result back to the main memory upon the successful completion of the
 transaction, causing the final printf to output a $2$.
 
@@ -531,7 +547,7 @@ value of $y$.  Upon successful completion of the program it prints $4$ ({1 + 1
 
 
 Our last test program directly tests our ability to rollback a commit when we
-reach an xabort.
+reach an \texttt{xabort}.
 
 \begin{verbatim}
 xbeginq 40051e <fail>
@@ -540,17 +556,17 @@ xabort $5
 \end{verbatim}
 
 Here, we once again modify the value stored in $x$. However, this time, we hit
-an xabort before reaching an xend statement.  As soon as we hit the invalid
-instruction for the xabort, we call our abort handler to free our data
+an \texttt{xabort} before reaching an \texttt{xend} statement.  As soon as we hit the invalid
+instruction for the \texttt{xabort}, we call our abort handler to free our data
 structures and roll back our changes. As a result, the change to $x$ appears as
 though it never occurred. We then modify \%RIP according to the argument to the
-xbegin statement. Although we only tested the aborts directly with xabort, the
+\texttt{xbegin} statement. Although we only tested the aborts directly with \texttt{xabort}, the
 same abort handler could be called from whenever an event occurs that
 invalidates the transaction, such as a conflicting write from another core.
 
 \subsection{Current Assumptions}
 
-The current implementation in palacios is subject to a number of assumptions
+The current implementation in Palacios is subject to a number of assumptions
 that are currently the result of time limitations, and not intended to be a
 part of the final transaction model.
 
@@ -561,7 +577,7 @@ trivial to implement via their Intel counterparts.
 
 In order to perform the hypercall code injection, the decoder is used to 
 determine the length of the current instruction, so that the injected code
-can be placed without damaging neceassary operands. However, the built in
+can be placed without damaging necessary operands. However, the built in
 decoder currently only works with a limited set of instructions, preventing
 arbitrary instructions from being run in a transaction, limiting them to a 
 small set of test instructions. While this issue can likely be solved by 
@@ -599,9 +615,9 @@ the kernel, we can easily filter them out.
 
 The transaction mode indicator currently assumes that only a single
 transaction can run at a time. This means that if one process is in transaction
-mode, a second core encountering an XBEGIN instruction will cause problems.
+mode, a second core encountering an \texttt{xbegin} instruction will cause problems.
 This could be worked around without too much difficulty by separating the
-indicators, allowing a core to be in both transaction mode (ie performing
+indicators, allowing a core to be in both transaction mode (i.e. performing
 a local transaction), and recording its writes to be validated against
 another transaction.
 
@@ -609,7 +625,7 @@ Our current implementation also assumes that it is the only core running, and
 ignores the potential of aborts cause by threads of execution on other cores.
 While this assumption must be removed in order for transactional memory to
 truly be effective, this has allowed us to implement much of the basic tools
-and structure necessary for transactional memory.
+and structure necessary for transactional memory. 
  
 
 \section{Future Work}
