@@ -57,16 +57,16 @@ utilize the hardware, one must juggle a growing number of locks, condition
 variables, and all the overhead that comes with them.
 
 One proposed solution to this problem has been the concept of transactional
-memory~\cite{Herlihy:1993:TMA:173682.165164}, which proposes a system
-which hides the management of concurrency from programmers and instead
-presents them with an interface which guarantees that either a segment of
-code will be run without interference from other processes, or will be
-abandoned and the program allowed to determine its next course of action.
+memory~\cite{Herlihy:1993:TMA:173682.165164}, which proposes a system which
+hides the management of concurrency from programmers and instead presents them
+with an interface which guarantees that either a segment of code will be run
+without interference from other threads of execution, or will be abandoned and
+the program allowed to determine its next course of action.
 
 Despite the potential convenience provided by transactional memory and the fact
 that hardware support was first proposed almost 20 years ago~\cite{Herlihy},
 transactional memory support is still limited to software support. However,
-Intel recently announced their plans to add support into upcoming
+Intel recently announced their plans to add support into future
 processors~\cite{intelsys}.
 
 We present a preliminary implementation of the transactional memory system
@@ -94,17 +94,18 @@ overview of the general idea of transactional memory. We then go on to describe
 the implementation that Intel intends to include in the extension for the
 upcoming Haswell processors.
 
-\subsection{Transactions}
-We define a \emph{transaction} to be a sequence of memory operations that are 
-performed by a processes such that, to all other processes, the operations 
-seem to have been performed atomically. Furthermore, the operations must 
-appear to the process performing the transaction as having happened one after 
-another, with no interference from other processes. When a transaction is finished,
-it either commits the results of its operations to main memory or it aborts 
-the transaction and throws away its changes, depending on the results of a
-memory validation. The idea of memory transactions of this form arise from the
-notion of database transactions, except without the requirement that transactions
-are durable to crashes. 
+\subsection{Transactions} 
+
+We define a \emph{transaction} to be a sequence of memory operations that are
+performed by a processor such that, to all other processors, the operations
+seem to have been performed atomically. Furthermore, the operations must appear
+to other processors  performing the transaction as having happened one after
+another, with no interference from other processes.  When a transaction is
+finished, it either commits the results of its operations to main memory or it
+aborts the transaction and throws away its changes, depending on the results of
+a memory validation. The idea of memory transactions of this form arise from
+the notion of database transactions, except without the requirement that
+transactions are durable to crashes. 
 
 In order to protect the appearance that the operations have executed serially
 without interference, the validation must detect if other processes have
@@ -117,26 +118,26 @@ memory written by the transaction (potentially interfering with atomicity).
 Upon an abort, a transaction may decide to attempt to run again, or revert to
 traditional mutex locking mechanisms.~\cite{Herlihy:1993:TMA:173682.165164}
 
-In addition to memory conflicts with other user processes, 
-transactions may also be aborted in the event of interrupts, context switches,
-or other forced changes in the control flow, as they would violate the
-requirement that the transaction happen entirely serially. 
+In addition to memory conflicts with other user processes, transactions may
+also be aborted in the event of interrupts, context switches, or other forced
+changes in the control flow, as they would violate the requirement that the
+transaction happen entirely serially. 
 
 Transactions of this form can be thought of as an optimistic approach to
-concurrency, contrasting with the more pessimistic approach of locks. 
-Rather than explicitly preventing other processes from accessing memory, the
-transaction assumes that it will probably be able to complete unencumbered. If
-a conflict does occur, the transaction is able to deal with it accordingly.
-Locks, on the other hand, assume that conflicts are likely to occur, and 
-directly block other processes from accessing the relevant portions of memory.
-Transactions therefor stand to offer a performance gain, as forced 
-serialization can be avoided in many cases.
+concurrency, contrasting with the more pessimistic approach of locks.  Rather
+than explicitly preventing other cores from accessing memory, the transaction
+assumes that it will probably be able to complete unencumbered. If a conflict
+does occur, the transaction is able to deal with it accordingly.  Locks, on the
+other hand, assume that conflicts are likely to occur, and directly block other
+processors from accessing the relevant portions of memory.  Transactions
+therefor stand to offer a performance gain, as forced serialization can be
+avoided in many cases.
 
-In addition, transactional memory stands to decrease the complexity of 
-multi-process applications. Programmers would no longer be weighed down by 
-keeping track of which process is holding which locks, and no longer needs
-to worry about deadlocks, starvation, and other side effects that can result
-from incorrect use of locks.
+In addition, transactional memory stands to decrease the complexity of
+concurrent programming. Programmers would no longer be weighed down by keeping
+track of which thread is holding which locks, and no longer needs to worry
+about deadlocks, starvation, and other side effects that can result from
+incorrect use of locks.
 
 \begin{table}
 \begin{center}
@@ -149,7 +150,7 @@ from incorrect use of locks.
     \hline
     \end{tabular}
     \caption{The results of a transaction given the combination of a transaction
-            opteration and an extermal operation on the same memory address.}
+            operation and an external operation on the same memory address.}
 \label{results_table}
 \end{center}
 \end{table}
@@ -162,14 +163,14 @@ Synchronization Extension (TSX), which is their implementation of transactional
 memory. The extension includes two interfaces: the first is Hardware Lock
 Elision, a system designed to work on legacy processors, and of no further
 interest to us. The second is Restricted Transactional Memory (RTM). This 
-includes instructions for beggining a transactional region (and specifying the
+includes instructions for beginning a transactional region (and specifying the
 code to run in the event of a failure), aborting a transaction, and ending a 
 transactional region. \cite{intelsys, intelblog}
 
 The Intel implementation generally follows the design of 
 ~\cite{Herlihy:1993:TMA:173682.165164}, with a few exceptions.
 Most notably, each transaction is only attempted a single time: in the event
-of a failure or abort, the code immediatly resorts to the abort handler. 
+of a failure or abort, the code immediately resorts to the abort handler. 
 Additionally, the transactions are checked at a granularity of cache lines, 
 rather than actual memory address. In order to validate each transaction at the
 time of completion, this implementation stores a read set, the locations of
@@ -179,11 +180,11 @@ writes to an address in either set.
 
 Since this is a hardware implementation, transactions may also abort if the 
 read and write sets exceed a certain, hardware dependent, capacity. The 
-transaction will also be aborted for any numer of instructions that may 
+transaction will also be aborted for any number of instructions that may 
 interfere with control flow: such as the writing of control registers, any 
 variety of interrupt, processor state changes, TLB control, and so on. The 
 specification also suggests that aborts may occur in the case of self modifying
-code, or other unpredicable scenarios.
+code, or other unpredictable scenarios.
 
 The Intel implementation also offers support for nested paging, however we
 save discussion of this topic for later work. (Maybe just don't mention this). 
@@ -215,7 +216,7 @@ In order to implement transactional memory in Palacios, we attempt to follow
 Intel's Haswell specifications, providing us with a consistent interface with which
 to use transactions, as well as making future comparisons to direct hardware
 implementations easier. The implementation relies on storing all information
-that would normally be kept by the processor in the data structures availible
+that would normally be kept by the processor in the data structures available
 to Palacios. As a result, a great deal of the complexity of our implementation
 arises from our need to exit the guest and perform actions in the VMM. We now
 consider the primary components of our implementation.
@@ -258,7 +259,7 @@ sections.
 \centering
 \includegraphics[height=1.75in]{figs/fsm.png}
 \caption{The state machine which controls how our implementation records 
-transactions. \#PF indicates that a page fault has occured, FA is the faulting
+transactions. \#PF indicates that a page fault has occurred, FA is the faulting
 address, and write indicates the error code.}
 \label{flowchart}
 \end{figure}
@@ -267,7 +268,7 @@ address, and write indicates the error code.}
 The transaction begins when the VM enounters an XBEGIN instruction. Since the 
 VM is running on hardware which does not yet support this instruction, this
 causes the VM to exit. On an AMD machine, the SVM handler then indicates that
-the undefined exception was indeed the cuase for the exit. An undefined 
+the undefined exception was indeed the cause for the exit. An undefined 
 exception handler is then called, which performs a limited decoding to see
 if the exit was caused by one of the three Haswell transactional memory
 instructions.    
@@ -323,14 +324,14 @@ If the initial page fault is caused by a write (and in particular, possibly
 caused by an attempt to write on a page that is marked read only), we 
 add the page to our write set. We then pass a special staging page to the PTE
 handler so that the write is performed on our staging page. This allows the 
-writes to appear serially to the process running the transaction, but be
-invisible to all other processes.
+writes to appear serially to the processor running the transaction, but be
+invisible to all other processors.
 
 Notably, commands which perform a write and a read on the same memory location
 will leave the read undetected, as it will not cause a page fault. However,
 this will not cause any problems, as a write is strictly worse than a read. In
 other words, any situation that would cause an abort with an address in the 
-read set will also cause an abourt for an address in the write set.
+read set will also cause an abort for an address in the write set.
 
 \subsubsection{Finishing an Instruction}
 
@@ -370,13 +371,14 @@ discarding any changes that the transaction made.
 \subsubsection{External Aborts}
 
 TODO: This I guess.
-It is also possible that external processes will trigger an abort by 
-interacting with the read write sets of the transacting process. Therefore, 
-while a transaction is running in one processes, all other cores have their
-transaction mode set to OTHER. While this is on, the reads and writes of 
-these processes are stored using the same techniques as for the transacting
-process, except that all reads and writes are done to main memory instead of a 
-staging page. If an intersection is ever detected between the transactions
+
+It is also possible that other threads of execution will trigger an abort by
+interacting with the read write sets of the transacting processor. Therefore,
+while a transaction is running in one processor, all other cores have their
+transaction mode set to OTHER. While this is on, the reads and writes of these
+processors are stored using the same techniques as for the transacting
+processor, except that all reads and writes are done to main memory instead of
+a staging page. If an intersection is ever detected between the transactions
 write set and the read and write sets of other cores, or the read set of the
 transaction and others write sets, the transaction is aborted, using the same
 strategy used for other aborts.  
@@ -384,10 +386,10 @@ strategy used for other aborts.
 
 \section{Design Challenges}
 
-While in the process of desinging and implementing this feature in Palacios, we
+While in the process of designing and implementing this feature in Palacios, we
 encountered a number of challenges which ultimately shaped how our implementation
-works. The vast majority of the difficulty arrises from the need to return
-control to Palacios everytime a memory operation occurs. Since these normally
+works. The vast majority of the difficulty arises from the need to return
+control to Palacios every time a memory operation occurs. Since these normally
 occur extremely often with no interference, there is no existing mechanism to 
 cause such an action. In order to do so, we chose to make use of shadow paging.
 By inducing page faults (namely by blindly invalidating the entire table as
@@ -400,14 +402,14 @@ the next instruction will cause faults. In order to do this, we make use of a
 VMMCall, which we insert after every instruction, as described above. In order
 to have the hypercall run the correct handler, the correct code must be moved
 into RAX prior to the execution of the call. This adds the further complication
-that the value of RAX must also be copied into the guest core datastructure,
+that the value of RAX must also be copied into the guest core data structure,
 and restored after the VMMCall has executed, in order to guarantee that the 
 transaction code executes correctly.  
 
 In the majority of our tests, we made use of the addq instruction, as the 
 decoder is able to properly determine its length and it provides us with the
 potential to create a variety of operations. One interesting note, is that when
-adding an immediate to a memory address, no detectible read is performed on
+adding an immediate to a memory address, no detectable read is performed on
 the destination address: the first page fault seen after the ifetch is a write.
 Therefore, when a transaction is running, and the write is to be done on the
 staging page instead of main memory, the instruction will write an incorrect
@@ -425,15 +427,14 @@ activity.
 
 In order to test our implementation, we developed a small set of test code that
 performs a small number of memory operations in a way that we can easily check
-the correctness of the result. The limitations in the decoder described in the
-previous section further restricted us to a particularly small set of 
-instructions. We therefore settled on making use of the addq instruction, as
-offers flexibility in the type of memory operations we test.
+the correctness of the result when commit or aborting transactions. 
+In the simple examples that follow, we use the addq instruction, as it
+offers flexibility in the type of operations involving memory we must test.
 
 In general, our code is of the form:
 \begin{verbatim}
 int main(){
-    long x = 0;
+    long x = 1;
     long y = 2;
     printf("%ld\n",x);  
     asm(...)
@@ -442,9 +443,15 @@ int main(){
 }
 \end{verbatim} 
 
-Where the ``asm(...)'' includes our transaction, as well as some careful 
-manipulations to avoid using movs during a transaction. The first test simply
-adds an immediate value to a register using the following instructions:
+Where the ``asm(...)'' includes our transaction, which should either commit or
+abort the result, depending on the test. In the assembly code excerpts below,
+we modify $x$, and in some cases, $y$, within a transaction.  For all of these
+examples, \%RDX contains the memory address of the variable $x$, while \%RBX
+contains the value of $y$.
+
+Our first test file simply adds an immediate value to the contents of a memory
+address stored in \%RDX.
+
 \begin{verbatim}
 xbeginq 40050e <fail>
 addq   $0x1,(%rdx)
@@ -452,14 +459,21 @@ xend
 jmp    40050f <success>
 \end{verbatim}
 
-In the execution of the addq instruction, following the ifetch, we expect
-to see a single page fault caused by the attempt to write to the memory address
-in \%RDX (which in this case points to our $x$ variable. Indeed, exactly this 
-happens, and the write is actually performed to the staging page, which then 
-copies the result back to the main memory upon the successful completion of 
-the transaction, causing the final printf to output a $1$.
+In this example, we originally expected the addq instruction to see a page
+fault caused by an attempt to read the memory address in \%RDX, however, for
+this instruction, the page fault was caused by an attempt to write to the
+memory address in \%RDX (which points to our $x$ variable). Originally, when we
+mapped this memory address to our staging page, it would perform the read from
+the address in the staging page.  In other words, the read and write occurred
+simultaneously.  In order to address this issue, even when we page fault due to
+a write, we first read the current contents of memory and save it to our
+staging page. Then the write is actually performed to the staging page, using
+the initial value we copied.  After reaching the xend instruction,  Then it
+copies the result back to the main memory upon the successful completion of the
+transaction, causing the final printf to output a $2$.
 
 Next, we test the adding of a memory address to a register:
+
 \begin{verbatim}
 xbeginq 400518 <fail>
 add    (%rdx),%rax
@@ -469,7 +483,14 @@ jmp    400519 <success>
 
 In this case, we expect to single page fault caused by the read to the address
 in \%RDX register. Again, this happens as expected, and the address is logged
-in the appropriate read set.
+in the appropriate read set. When \%RAX is initialized to 0, the process 
+successfully prints $1$ upon completion.
+
+
+In our next example, we look at a slightly more complicated case where we first
+modify a value in memory, and then use the written value in a subsequent
+instruction. This checks to ensure that we are properly using values from the
+staging page. 
 
 \begin{verbatim}
 xbeginq 40051e <fail>
@@ -479,6 +500,12 @@ xend
 jmp    40051f <success>
 \end{verbatim}
 
+As with the first example, this first adds one to $x$ (in memory). Next it reads
+the value from memory, and adds it to \%RBX. Here, \%RBX contains the value of $y$.
+Upon successful completion of the program it prints $4$ ({1 + 1 + 2}).
+
+
+%% TODO: Abort example
 
 \subsection{Current Assumptions}
 
@@ -502,7 +529,7 @@ instruction set, bugs in Palacios prevented us from doing so at this time.
 
 The current implementation also assumes that the set of instructions in a 
 transaction occur on the same page, and do not run within $10$ bytes of the
-end of the page. While this should be fixable by checking the allignment of
+end of the page. While this should be fixable by checking the alignment of
 the instruction address, we have left this assumption in the interest of 
 time. 
 
@@ -514,7 +541,7 @@ artificial limitation. Second, since the handler which deals with the case
 of a transaction write simply passes the usual PTE handler the same staging
 page no matter what, it assumes that the offset will not conflict with any
 previous or future writes. We see that this could happen if two writes which
-normally happen on seperate pages, but the same offest, are performed in the
+normally happen on separate pages, but the same offset, are performed in the
 same transaction. Again, while this scenario is unlikely for small transactions
 we are creating a restriction.
  
@@ -523,28 +550,26 @@ of interrupts occur, and control jumps to the kernel. While we have not yet
 determined the cause of these interrupts, we suspect they are the result of 
 a timer, or other piece of hardware. Since these may interfere with our 
 transaction, we should abort when this occurs. However, since our test 
-transactions are simple, we assume that they will not interefere with a 
+transactions are simple, we assume that they will not interfere with a 
 transaction and simply ignore the interrupts. In particular, this means that
 we ignore a wave of page faults on kernel address upon each return to the
 VM. Since the error code of the fault indicates the faults were raised by
 the kernel, we can easily filter them out.   
 
-The transaction mode indicator currently assumes that only a signle 
+The transaction mode indicator currently assumes that only a single
 transaction can run at a time. This means that if one process is in transaction
 mode, a second core encountering an XBEGIN instruction will cause problems.
-This could be worked around without too much difficulty by seperating the
+This could be worked around without too much difficulty by separating the
 indicators, allowing a core to be in both transaction mode (ie performing
 a local transaction), and recording its writes to be validated against
 another transaction.
 
-Our current implementation also assumes that it is the only core running,
-and ignores the potential of aborts cause by external cores. While this
-assumption must be removed in order for transactional memory to truly be
-effective, this has allowed us to implement much of the basic tools and
-structure necessary for transactional memory.
+Our current implementation also assumes that it is the only core running, and
+ignores the potential of aborts cause by threads of execution on other cores.
+While this assumption must be removed in order for transactional memory to
+truly be effective, this has allowed us to implement much of the basic tools
+and structure necessary for transactional memory.
  
-- Assume all activity comes from a single core (will be fixed)
-
 
 \section{Future Work}
 
@@ -577,7 +602,7 @@ Implementing this would likely only require minor modifications to the state
 machine. 
 
 Finally, there is the issue of performance. While our implementation is able 
-to campture and record all operations that it needs to track, it does so at the
+to capture and record all operations that it needs to track, it does so at the
 cost of up to $4$ exits per instruction, which would result in a tremendous
 slowdown. It is likely that the necessary information could be retrieved at a 
 less granular scale and reduce the number of exits to Palacios.
@@ -591,7 +616,7 @@ the transaction are non-trivial endeavors.
 
 We have implemented the preliminary components of support for the Intel model
 of transactional memory in the Palacios virtual machine manager. Despite a 
-number of complex technical challanges, we have been able to create
+number of complex technical challenges, we have been able to create
 transactions which are able to log their memory activity, and either commit
 the data to main memory, or abort it in the case of interference. While the
 current implementation is subject to a number of restrictions, we have 
@@ -607,7 +632,7 @@ greatly simplify simulations for such hardware testing tools.
 
 \section{Author Bios}
 
-Zachary Bischof is a third-year PhD student working with Prof. Fabián
+Zachary Bischof is a third-year PhD student working with Prof. Fabi\'{a}n
 Bustamante in the AquaLab research group. His research interests include
 networking and distributed systems, in particular, evaluating their performance
 and impact on the network.
